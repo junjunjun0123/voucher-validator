@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voucher Validator — Vista Connect</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 0; background: #f5f6f8; color: #1a1a1a; font-size: 14px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  h2 { margin: 24px 0 10px; font-size: 16px; color: #555; }
+  .subtle { color: #888; font-size: 12px; margin-bottom: 20px; }
+  .card {
+    background: #fff; border: 1px solid #e0e3e9; border-radius: 8px;
+    padding: 18px 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: #666; font-weight: 600; }
+  .field input, .field select {
+    padding: 8px 10px; border: 1px solid #cfd4dc; border-radius: 6px;
+    font-size: 14px; background: #fff; min-width: 180px;
+  }
+  #sessionDdl, #cinemaDdl { min-width: 400px; max-width: 100%; }
+  .field input:focus, .field select:focus { outline: none; border-color: #4a7eff; }
+  button {
+    padding: 9px 18px; border: 0; border-radius: 6px; cursor: pointer;
+    font-size: 14px; font-weight: 600; background: #2563eb; color: #fff;
+  }
+  button:hover { background: #1d4ed8; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  button.secondary { background: #e2e8f0; color: #1e293b; }
+  button.secondary:hover { background: #cbd5e1; }
+  .badge {
+    display: inline-block; padding: 3px 8px; border-radius: 12px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+  }
+  .badge-ticket  { background: #dbeafe; color: #1e40af; }
+  .badge-fb      { background: #fef3c7; color: #92400e; }
+  .badge-cash    { background: #d1fae5; color: #065f46; }
+  .badge-unknown { background: #f1f5f9; color: #475569; }
+  .badge-ok      { background: #d1fae5; color: #065f46; }
+  .badge-fail    { background: #fee2e2; color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eef0f3; }
+  th { background: #f8fafc; font-weight: 600; color: #475569; font-size: 12px; text-transform: uppercase; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #eff6ff; }
+  tr.selected { background: #dbeafe; }
+  pre {
+    background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 6px;
+    overflow: auto; font-size: 12px; max-height: 400px;
+  }
+  .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 800px) { .result-grid { grid-template-columns: 1fr; } }
+  .kv { font-size: 13px; }
+  .kv div { padding: 3px 0; border-bottom: 1px solid #f1f5f9; display: flex; gap: 8px; }
+  .kv b { color: #475569; min-width: 180px; display: inline-block; }
+  .empty { color: #94a3b8; font-style: italic; }
+  .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-line { font-size: 12px; color: #64748b; margin-top: 6px; }
+  .pill { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Voucher Validator</h1>
+  <div class="subtle">Vista Connect API &middot; Ticket / F&amp;B / Cash vouchers &middot; runs from your machine</div>
+
+  <!-- Step 1: Enter voucher -->
+  <div class="card">
+    <h2 style="margin-top:0">1. Enter voucher</h2>
+    <div class="row">
+      <div class="field">
+        <label>Barcode</label>
+        <input id="barcode" placeholder="e.g. JP0010001235" style="min-width:320px" onkeydown="if(event.key==='Enter')lookupVoucher()">
+      </div>
+      <button id="btnLookup" onclick="lookupVoucher()">Look up voucher</button>
+    </div>
+    <div class="status-line" id="lookupStatus"></div>
+  </div>
+
+  <!-- Step 2: Voucher details result -->
+  <div class="card" id="detailsCard" style="display:none">
+    <h2 style="margin-top:0">2. Voucher details</h2>
+    <div class="result-grid">
+      <div class="kv" id="detailsKv"></div>
+      <div>
+        <div id="typeBadge"></div>
+        <div style="margin-top:10px" id="redemptionSummary"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Ticket voucher only — pick session -->
+  <div class="card" id="sessionCard" style="display:none">
+    <h2 style="margin-top:0">3. Pick session <span class="badge badge-ticket">ticket voucher only</span></h2>
+    <div class="row">
+      <div class="field">
+        <label>Location (cinema)</label>
+        <select id="cinemaDdl" onchange="loadSessions()"><option value="">-- select cinema --</option></select>
+      </div>
+      <div class="field">
+        <label>Show date</label>
+        <input id="showDate" type="date" onchange="loadSessions()">
+      </div>
+      <button class="secondary" onclick="loadSessions()">Load sessions</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field" style="flex:1;min-width:300px">
+        <label>Session (by film + time)</label>
+        <select id="sessionDdl" onchange="pickSession()" disabled>
+          <option value="">-- select cinema & date first --</option>
+        </select>
+      </div>
+    </div>
+    <div class="status-line" id="sessionStatus"></div>
+    <div id="sessionPreview" style="margin-top:8px;font-size:12px;color:#475569"></div>
+  </div>
+
+  <!-- Step 4: Validate -->
+  <div class="card" id="validateCard" style="display:none">
+    <h2 style="margin-top:0">4. Validate</h2>
+    <div class="row" id="validateRow"></div>
+    <button id="btnValidate" onclick="validateTicket()" disabled>Validate ticket voucher</button>
+    <div class="status-line" id="validateStatus"></div>
+  </div>
+
+  <!-- Result -->
+  <div class="card" id="resultCard" style="display:none">
+    <h2 style="margin-top:0">Result</h2>
+    <div id="resultSummary"></div>
+    <pre id="resultJson" style="margin-top:10px"></pre>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const today = new Date().toISOString().slice(0,10);
+$('showDate').value = today;
+
+// ---- helpers ----
+async function api(path) {
+  const r = await fetch(path);
+  return r.json();
+}
+function setStatus(id, msg, loader=false) {
+  $(id).innerHTML = (loader ? '<span class="loader"></span> ' : '') + (msg || '');
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleString();
+}
+
+// ---- 1. Lookup voucher (works for all 3 types) ----
+async function lookupVoucher() {
+  const barcode = $('barcode').value.trim();
+  if (!barcode) { alert('Enter a barcode'); return; }
+  const btn = $('btnLookup'); btn.disabled = true;
+  setStatus('lookupStatus', 'Looking up voucher…', true);
+  try {
+    const r = await api('/api/voucher-details?barcode=' + encodeURIComponent(barcode));
+    $('detailsCard').style.display = '';
+    const kv = $('detailsKv');
+    if (r.error || r.errorCode) {
+      // AUTOMATIC TICKET-VOUCHER DETECTION:
+      // The lookup itself fails ONLY for ticket vouchers, because they need
+      // a cinema/session context to be validated. The signature is:
+      //   - HTTP 400 (exposed via r.statusCode)
+      //   - errorCode 100 = "No cinemas allow online voucher validation"
+      //   - errorCode 110 = "Failed to get voucher details from sales server"
+      // When we see this, jump straight to the session picker.
+      const code = r.errorCode;
+      const httpStatus = r.statusCode || r.status || '?';
+      const looksLikeTicketVoucher =
+        (String(httpStatus) === '400' && String(code).match(/^(100|110)$/));
+
+      kv.innerHTML = `
+        <div><b>Barcode</b><span>${barcode}</span></div>
+        <div><b>HTTP</b><span>${httpStatus}</span></div>
+        <div><b>errorCode</b><span>${r.errorCode||''}</span></div>
+        <div><b>Description</b><span>${(r.errors||[]).map(e=>e.description).join('; ')||r.error||''}</span></div>`;
+
+      if (looksLikeTicketVoucher) {
+        // Looks like a ticket voucher — lookup failed because no session context.
+        // Skip the "Not found" badge and instead show a "ticket voucher — needs session" badge,
+        // then immediately reveal the session picker.
+        $('typeBadge').innerHTML = '<span class="badge badge-ticket">ticket voucher (needs session)</span>';
+        $('redemptionSummary').innerHTML =
+          '<p style="margin:0;color:#475569;font-size:12px">Lookup returned errorCode ' + (code||'?') +
+          ' — this is the signature of a ticket voucher that needs a session/cinema context. ' +
+          'Pick a location + session below to validate it.</p>';
+        $('sessionCard').style.display = '';
+        $('validateCard').style.display = '';
+        $('validateRow').innerHTML = '';
+        if (!$('cinemaDdl').options.length || $('cinemaDdl').options.length === 1) {
+          loadCinemas();
+        }
+        $('resultCard').style.display = 'none';
+        setStatus('lookupStatus', 'Ticket voucher detected — session required. Pick a cinema + session below.');
+        // Scroll to the session card so the user sees it
+        $('sessionCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        $('typeBadge').innerHTML = '<span class="badge badge-fail">Not found</span>';
+        $('redemptionSummary').innerHTML = '';
+        $('sessionCard').style.display = 'none';
+        $('validateCard').style.display = 'none';
+        $('resultCard').style.display = 'none';
+        setStatus('lookupStatus', 'HTTP ' + httpStatus + ' — ' + (r.errorCode||r.error));
+      }
+    } else {
+      kv.innerHTML = `
+        <div><b>Barcode</b><span>${r.id||barcode}</span></div>
+        <div><b>Voucher code</b><span>${r.code||''}</span></div>
+        <div><b>Type name</b><span>${r.typeName||''}</span></div>
+        <div><b>Status</b><span><span class="pill ${statusBadge(r.status)}">${r.status||''}</span></span></div>
+        <div><b>Valid from</b><span>${fmtDate(r.validFromDateTime)}</span></div>
+        <div><b>Expires</b><span>${fmtDate(r.expiryDateTime)}</span></div>
+      `;
+      detectType(r);
+    }
+  } catch (e) {
+    setStatus('lookupStatus', 'ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function statusBadge(s) {
+  if (s === 'Issued')         return 'badge-ok';
+  if (s === 'Redeemed')       return 'badge-fail';
+  if (s === 'Expired')       return 'badge-fail';
+  if (s === 'PartiallyRedeemed') return 'badge-ok';
+  return 'badge-unknown';
+}
+
+// ---- Detect voucher type from the redemption blocks ----
+function detectType(r) {
+  const t = r.ticketRedemptions;
+  const p = r.paymentRedemptions;
+  const m = r.miscellaneousRedemptions;
+  let type = 'unknown', badgeClass = 'badge-unknown', summary = '';
+  const tAvail = t ? (t.available||0) : 0;
+  const pAvail = p ? (p.available||0) : 0;
+  const mAvail = m ? (m.available||0) : 0;
+  const pVal = p ? (p.paymentValueInCents||0) : 0;
+
+  if (tAvail > 0 && (pAvail === 0 && mAvail === 0)) {
+    type = 'ticket'; badgeClass = 'badge-ticket';
+    summary = `${tAvail} ticket redemption(s) available`;
+  } else if (pAvail > 0 && (tAvail === 0 && mAvail === 0)) {
+    type = 'cash'; badgeClass = 'badge-cash';
+    summary = `${pAvail} cash redemption(s) available · value ${(pVal/100).toFixed(2)}`;
+  } else if (mAvail > 0 && (tAvail === 0 && pAvail === 0)) {
+    type = 'fb'; badgeClass = 'badge-fb';
+    summary = `${mAvail} F&B redemption(s) available` +
+              (m.deals && m.deals.length ? ` · ${m.deals.length} deal(s) attached` : '');
+  } else if (tAvail > 0 || pAvail > 0 || mAvail > 0) {
+    type = 'mixed'; badgeClass = 'badge-unknown';
+    summary = `ticket:${tAvail} · cash:${pAvail} · fb:${mAvail}`;
+  } else {
+    summary = '<span class="empty">No redemptions available — voucher may be fully used</span>';
+  }
+
+  $('typeBadge').innerHTML = `<span class="badge ${badgeClass}">${type} voucher</span>`;
+  $('redemptionSummary').innerHTML = summary;
+
+  // Show session picker only for ticket vouchers
+  if (type === 'ticket') {
+    $('sessionCard').style.display = '';
+    if (!$('cinemaDdl').options.length || $('cinemaDdl').options.length === 1) {
+      loadCinemas();
+    }
+    $('validateCard').style.display = '';
+    $('validateRow').innerHTML = `<p style="margin:0;color:#666;font-size:12px">Ticket vouchers require a session. Pick a cinema and session above, then click Validate.</p>`;
+  } else {
+    $('sessionCard').style.display = 'none';
+    $('validateCard').style.display = 'none';
+    // For F&B and cash, the lookup itself IS the validation
+    $('resultCard').style.display = '';
+    $('resultSummary').innerHTML = `
+      <div><span class="badge ${badgeClass}">${type} voucher</span> &nbsp;
+      <span class="badge ${r.status==='Issued'?'badge-ok':(r.status==='Expired'?'badge-fail':'badge-unknown')}">${r.status||''}</span></div>
+      <p style="margin-top:8px">${summary}</p>
+      <p style="margin-top:6px;font-size:12px;color:#666">No session required for ${type} vouchers — lookup above is the validation.</p>`;
+    $('resultJson').textContent = JSON.stringify(r, null, 2);
+  }
+}
+
+// ---- Cinema dropdown ----
+async function loadCinemas() {
+  setStatus('sessionStatus', 'Loading cinemas…', true);
+  try {
+    // Fetch both the schedule dropdown list and the full id-name map in parallel
+    const [r, full] = await Promise.all([
+      api('/api/cinemas'),
+      api('/api/cinemas-full'),
+    ]);
+    // Build a name -> cinemaId lookup table from the OData list
+    const nameToId = {};
+    for (const c of (full.cinemas||[])) nameToId[c.name.toLowerCase()] = c.cinemaId;
+
+    const sel = $('cinemaDdl');
+    sel.innerHTML = '<option value="">-- select cinema --</option>';
+    (r.cinemas||[]).forEach(name => {
+      // Resolve the Connect cinema id so we can show it inline
+      // (uses the same logic as the backend, but client-side for the label)
+      const id = nameToId[name.toLowerCase()] ||
+                 nameToId[name.replace(/[^a-z0-9]/gi,'').toLowerCase()];
+      const opt = new Option(id ? `${name} (${id})` : name, name);
+      sel.appendChild(opt);
+    });
+    setStatus('sessionStatus', (r.cinemas||[]).length + ' cinemas available');
+  } catch (e) { setStatus('sessionStatus', 'ERROR: ' + e.message); }
+}
+
+// ---- Sessions ----
+let selectedSessionId = null;
+let selectedSessionObj = null;
+let sessionsCache = [];   // sessions for the current cinema+date
+let cinemaIdResolved = null;  // the Connect cinema id (e.g. "PKL") resolved from the schedule name
+
+async function loadSessions() {
+  const cinemaName = $('cinemaDdl').value;
+  const date = $('showDate').value.replace(/-/g,'/');
+  if (!cinemaName) { setStatus('sessionStatus', 'Select a cinema first'); return; }
+
+  // Resolve the Connect cinema id in parallel with the session fetch
+  setStatus('sessionStatus', 'Loading sessions…', true);
+  $('sessionDdl').innerHTML = '<option value="">-- loading... --</option>';
+  $('sessionDdl').disabled = true;
+  $('sessionPreview').innerHTML = '';
+  $('btnValidate').disabled = true;
+
+  try {
+    // Kick both calls together
+    const [r, rid] = await Promise.all([
+      api('/api/sessions?cinema=' + encodeURIComponent(cinemaName) + '&date=' + encodeURIComponent(date)),
+      api('/api/resolve-cinema-id?name=' + encodeURIComponent(cinemaName)),
+    ]);
+    cinemaIdResolved = rid.cinemaId || null;
+    sessionsCache = r.sessions || [];
+
+    if (!sessionsCache.length) {
+      $('sessionDdl').innerHTML = '<option value="">-- no sessions --</option>';
+      setStatus('sessionStatus', `No sessions found for ${cinemaName} on ${date}`);
+      return;
+    }
+
+    // Group sessions by film so the dropdown is easy to scan.
+    // Each option's value is the session ID (what the backend uses),
+    // the label is "<time> — <screen> [<status>]" inside an <optgroup> per film.
+    const byFilm = new Map();
+    for (const s of sessionsCache) {
+      if (!byFilm.has(s.film)) byFilm.set(s.film, []);
+      byFilm.get(s.film).push(s);
+    }
+    // Sort each film's sessions by showtime (string sort works for HH:MM)
+    for (const arr of byFilm.values()) arr.sort((a,b)=>(a.showing||'').localeCompare(b.showing||''));
+
+    let html = '<option value="">-- select a session --</option>';
+    for (const [film, arr] of byFilm) {
+      html += `<optgroup label="${escapeHtml(film)} (${arr.length})">`;
+      for (const s of arr) {
+        const label = `${s.showing} — ${s.screen} [${s.status}]${s.priceCard?' · '+s.priceCard:''}`;
+        html += `<option value="${s.sessionId}">${escapeHtml(label)}</option>`;
+      }
+      html += '</optgroup>';
+    }
+    $('sessionDdl').innerHTML = html;
+    $('sessionDdl').disabled = false;
+
+    const cinemaInfo = cinemaIdResolved
+      ? `cinema id <code>${cinemaIdResolved}</code>`
+      : `<span style="color:#b91c1c">cinema id NOT resolved</span>`;
+    setStatus('sessionStatus', `${sessionsCache.length} sessions · ${byFilm.size} films · ${cinemaInfo}`);
+  } catch (e) {
+    setStatus('sessionStatus', 'ERROR: ' + e.message);
+  }
+}
+
+function pickSession() {
+  const id = $('sessionDdl').value;
+  selectedSessionId = id;
+  selectedSessionObj = sessionsCache.find(s => String(s.sessionId) === String(id)) || null;
+  if (!id) {
+    $('sessionPreview').innerHTML = '';
+    $('btnValidate').disabled = true;
+    return;
+  }
+  const s = selectedSessionObj;
+  $('sessionPreview').innerHTML = `Selected: <b>${escapeHtml(s.film)}</b> · ${s.showing}–${s.finishing} · ${s.screen} ·
+    <span class="pill ${s.status==='Open'?'badge-ok':'badge-unknown'}">${s.status}</span> ·
+    session id <code>${s.sessionId}</code>${cinemaIdResolved?` · cinema id <code>${cinemaIdResolved}</code>`:''}`;
+  $('btnValidate').disabled = false;
+  setStatus('sessionStatus', 'Ready — click Validate');
+}
+
+function escapeHtml(s) {
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---- 4. Validate ticket voucher ----
+async function validateTicket() {
+  const barcode = $('barcode').value.trim();
+  if (!barcode || !selectedSessionId) return;
+  const btn = $('btnValidate'); btn.disabled = true;
+  setStatus('validateStatus', 'Validating…', true);
+  $('resultCard').style.display = '';
+  $('resultSummary').innerHTML = '';
+  $('resultJson').textContent = '';
+
+  // Note: cinemaId needed for the API call. We don't have the V2 cinema list,
+  // so pass the selected cinema name; the backend may need the actual Connect cinema id.
+  // For now we pass what we have; if CinemaNotFound comes back, we'll display it.
+  const cinemaName = $('cinemaDdl').value;
+  try {
+    const url = `/api/validate-ticket-voucher?barcode=${encodeURIComponent(barcode)}&sessionId=${encodeURIComponent(selectedSessionId)}&cinemaId=${encodeURIComponent(cinemaName)}`;
+    const r = await api(url);
+    let summary = '';
+    if (r.error || r.errorCode) {
+      summary = `<div><span class="badge badge-fail">INVALID</span> &nbsp; <code>${r.errorCode||r.error||''}</code></div>
+                 <p style="margin-top:8px">${(r.errors||[]).map(e=>e.description).join('; ')||r.raw||''}</p>
+                 ${r._resolvedCinemaId ? `<p style="font-size:12px;color:#666">Cinema resolved: <code>${r._resolvedFrom}</code> → <code>${r._resolvedCinemaId}</code></p>` : ''}`;
+    } else if (r.ticketTypes) {
+      summary = `<div><span class="badge badge-ok">VALID</span> &nbsp; <span class="badge badge-ok">${r.numberOfRedemptionsRemaining||0} redemption(s) left</span></div>
+                 <p style="margin-top:8px"><b>Available ticket types:</b></p>
+                 <ul>${(r.ticketTypes||[]).map(t=>'<li>'+t.ticketTypeCode+'</li>').join('')}</ul>
+                 ${r._resolvedCinemaId ? `<p style="font-size:12px;color:#666">Cinema resolved: <code>${r._resolvedFrom}</code> → <code>${r._resolvedCinemaId}</code></p>` : ''}`;
+    } else {
+      summary = '<div><span class="badge badge-unknown">UNKNOWN</span></div>' +
+                (r._resolvedCinemaId ? `<p style="font-size:12px;color:#666">Cinema resolved: <code>${r._resolvedFrom}</code> → <code>${r._resolvedCinemaId}</code></p>` : '');
+    }
+    $('resultSummary').innerHTML = summary;
+    $('resultJson').textContent = JSON.stringify(r, null, 2);
+    setStatus('validateStatus', '');
+  } catch (e) {
+    setStatus('validateStatus', 'ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// init
+loadCinemas();
+</script>
+</body>
+</html>

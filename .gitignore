@@ -1,0 +1,36 @@
+# ---- Secrets ---------------------------------------------------------------
+.streamlit/secrets.toml
+.env
+.env.*
+
+# ---- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+pylibs/
+*.egg-info/
+pip-install*.log
+
+# ---- Node ------------------------------------------------------------------
+node_modules/
+
+# ---- Internal captures (not for public repos) ------------------------------
+# Raw dumps of the internal Vista API + schedule page, and the OpenAPI specs.
+swagger-v1.json
+swagger-v2.json
+cinemas-odata.json
+schedule-results.html
+schedule-tab.html
+voucher-redemption-raw.html
+ticket-voucher-redemption-api-reference.md
+cinema-map.json
+
+# ---- Agent workspace -------------------------------------------------------
+.workbuddy-ai/
+
+# ---- OS / editor -----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
